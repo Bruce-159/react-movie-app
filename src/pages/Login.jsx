@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
-import { useAuth } from '../contexts/AuthContext'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { getSafeRedirectPath, useAuth } from '../contexts/AuthContext'
 
 function getAuthErrorMessage(error) {
   switch (error?.code) {
@@ -24,6 +24,10 @@ function getAuthErrorMessage(error) {
       return '網路連線失敗，請稍後再試。'
     case 'auth/unauthorized-domain':
       return '此網域尚未在 Firebase 授權，請聯絡管理員。'
+    case 'auth/popup-blocked':
+      return '瀏覽器封鎖了登入視窗，請允許此網站的彈出視窗後再試。'
+    case 'auth/popup-closed-by-user':
+      return '已取消 Google 登入。'
     default:
       return error?.message || '操作失敗，請稍後再試。'
   }
@@ -41,6 +45,7 @@ export default function Login() {
     signUpWithEmail,
   } = useAuth()
   const location = useLocation()
+  const navigate = useNavigate()
   const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -49,7 +54,7 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false)
   const [googleSubmitting, setGoogleSubmitting] = useState(false)
 
-  const from = location.state?.from || '/'
+  const from = getSafeRedirectPath(location.state?.from)
 
   useEffect(() => {
     if (redirectError) {
@@ -98,6 +103,7 @@ export default function Login() {
     setGoogleSubmitting(true)
     try {
       await signInWithGoogle(from)
+      navigate(from, { replace: true })
     } catch (e) {
       setError(getAuthErrorMessage(e))
       setGoogleSubmitting(false)

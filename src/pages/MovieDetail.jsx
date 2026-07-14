@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import ActorCard from '../components/ActorCard.jsx'
-import FavoriteButton from '../components/FavoriteButton.jsx'
+import MovieListButton from '../components/MovieListButton.jsx'
 
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY
 
 const TMDB_IMAGE_POSTER_BASE = 'https://image.tmdb.org/t/p/w342'
 const TMDB_IMAGE_BACKDROP_BASE = 'https://image.tmdb.org/t/p/w1280'
+const TMDB_IMAGE_LOGO_BASE = 'https://image.tmdb.org/t/p/w92'
+const WATCH_REGION = 'TW'
 
 const GRAIN_STYLE = {
   backgroundImage:
@@ -44,6 +46,18 @@ function getDirectors(crew) {
   return crew.filter((member) => member.job === 'Director')
 }
 
+/** 從 TMDB watch/providers 取出指定地區的訂閱串流平台（flatrate） */
+function getStreamingProviders(watchProviders, region = WATCH_REGION) {
+  const regionData = watchProviders?.results?.[region]
+  if (!regionData?.flatrate?.length) return { providers: [], link: null }
+
+  const providers = [...regionData.flatrate].sort(
+    (a, b) => (a.display_priority ?? 99) - (b.display_priority ?? 99),
+  )
+
+  return { providers, link: regionData.link ?? null }
+}
+
 function SectionTitle({ children }) {
   return (
     <div className="mb-6 flex items-center gap-3">
@@ -62,6 +76,7 @@ function MovieDetail() {
   const [movie, setMovie] = useState(null)
   const [credits, setCredits] = useState(null)
   const [videos, setVideos] = useState(null)
+  const [watchProviders, setWatchProviders] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -77,6 +92,10 @@ function MovieDetail() {
 
   const trailer = useMemo(() => findTrailer(videos), [videos])
   const directors = useMemo(() => getDirectors(credits?.crew), [credits])
+  const streaming = useMemo(
+    () => getStreamingProviders(watchProviders),
+    [watchProviders],
+  )
 
   const countries = useMemo(() => {
     if (!movie?.production_countries?.length) return '—'
@@ -103,32 +122,40 @@ function MovieDetail() {
       setMovie(null)
       setCredits(null)
       setVideos(null)
+      setWatchProviders(null)
 
       try {
         const detailUrl = `https://api.themoviedb.org/3/movie/${movieId}?api_key=${API_KEY}&language=zh-TW`
         const creditsUrl = `https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${API_KEY}`
         const videosUrl = `https://api.themoviedb.org/3/movie/${movieId}/videos?api_key=${API_KEY}&language=en-US`
+        const providersUrl = `https://api.themoviedb.org/3/movie/${movieId}/watch/providers?api_key=${API_KEY}`
 
-        const [detailRes, creditsRes, videosRes] = await Promise.all([
-          fetch(detailUrl),
-          fetch(creditsUrl),
-          fetch(videosUrl),
-        ])
+        const [detailRes, creditsRes, videosRes, providersRes] =
+          await Promise.all([
+            fetch(detailUrl),
+            fetch(creditsUrl),
+            fetch(videosUrl),
+            fetch(providersUrl),
+          ])
 
         if (!detailRes.ok) throw new Error(`API 錯誤：${detailRes.status}`)
         if (!creditsRes.ok) throw new Error(`API 錯誤：${creditsRes.status}`)
         if (!videosRes.ok) throw new Error(`API 錯誤：${videosRes.status}`)
+        if (!providersRes.ok) throw new Error(`API 錯誤：${providersRes.status}`)
 
-        const [detailData, creditsData, videosData] = await Promise.all([
-          detailRes.json(),
-          creditsRes.json(),
-          videosRes.json(),
-        ])
+        const [detailData, creditsData, videosData, providersData] =
+          await Promise.all([
+            detailRes.json(),
+            creditsRes.json(),
+            videosRes.json(),
+            providersRes.json(),
+          ])
 
         if (!cancelled) {
           setMovie(detailData)
           setCredits(creditsData)
           setVideos(videosData)
+          setWatchProviders(providersData)
         }
       } catch (e) {
         if (!cancelled) {
@@ -227,7 +254,16 @@ function MovieDetail() {
                 </p>
 
                 <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <FavoriteButton movie={movie} variant="detail" />
+                  <MovieListButton
+                    movie={movie}
+                    listType="favorites"
+                    variant="detail"
+                  />
+                  <MovieListButton
+                    movie={movie}
+                    listType="likes"
+                    variant="detail"
+                  />
                   {typeof movie.vote_count === 'number' &&
                     movie.vote_count >= 10 &&
                     typeof movie.vote_average === 'number' && (
@@ -296,6 +332,55 @@ function MovieDetail() {
                 </dd>
               </div>
             </dl>
+
+            <section className="mt-14">
+              <SectionTitle>串流平台</SectionTitle>
+              {streaming.providers.length > 0 ? (
+                <>
+                  <p className="mb-5 text-sm text-zinc-500">
+                    台灣地區可收看的訂閱平台（資料來源：JustWatch / TMDB）
+                  </p>
+                  <ul className="m-0 flex list-none flex-wrap gap-4 p-0">
+                    {streaming.providers.map((provider) => (
+                      <li
+                        key={provider.provider_id}
+                        className="flex flex-col items-center gap-2"
+                      >
+                        {provider.logo_path ? (
+                          <img
+                            src={`${TMDB_IMAGE_LOGO_BASE}${provider.logo_path}`}
+                            alt={provider.provider_name}
+                            title={provider.provider_name}
+                            className="h-14 w-14 rounded-xl object-cover shadow-lg shadow-black/40 ring-1 ring-white/10"
+                          />
+                        ) : (
+                          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-zinc-800 text-xs text-zinc-400 ring-1 ring-white/10">
+                            {provider.provider_name?.slice(0, 2) || '?'}
+                          </div>
+                        )}
+                        <span className="max-w-[5.5rem] text-center text-xs text-zinc-300">
+                          {provider.provider_name}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {streaming.link && (
+                    <a
+                      href={streaming.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-5 inline-block text-sm text-amber-400/90 underline decoration-amber-500/40 underline-offset-2 transition hover:text-amber-300"
+                    >
+                      查看更多觀看選項
+                    </a>
+                  )}
+                </>
+              ) : (
+                <p className="text-zinc-500">
+                  目前台灣地區沒有找到訂閱串流平台上架資訊。
+                </p>
+              )}
+            </section>
 
             {credits && (
               <section className="mt-14">

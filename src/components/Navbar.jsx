@@ -68,7 +68,7 @@ export default function Navbar() {
             找國片
           </NavLink>
           <NavLink to="/favorites" className={linkClass}>
-            收藏
+            我的電影
           </NavLink>
           {user ? (
             <div className="ml-1 flex items-center gap-2 sm:ml-2">
