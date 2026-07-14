@@ -14,7 +14,6 @@ import {
   sendEmailVerification,
   signInWithEmailAndPassword,
   signInWithPopup,
-  signInWithRedirect,
   signOut as firebaseSignOut,
 } from 'firebase/auth'
 import { auth } from '../firebase'
@@ -31,6 +30,16 @@ function getRedirectResultOnce() {
   return redirectResultPromise
 }
 
+/** 只允許站內相對路徑，避免異常 navigate 造成空白頁 */
+export function getSafeRedirectPath(raw) {
+  if (!raw || typeof raw !== 'string') return '/'
+  if (!raw.startsWith('/') || raw.startsWith('//')) return '/'
+  if (raw === '/login' || raw.startsWith('/login?') || raw.startsWith('/login#')) {
+    return '/'
+  }
+  return raw
+}
+
 const AuthContext = createContext(null)
 
 function AuthRedirectHandler() {
@@ -41,7 +50,9 @@ function AuthRedirectHandler() {
   useEffect(() => {
     if (loading || !user || location.pathname !== '/login') return
 
-    const savedFrom = sessionStorage.getItem(REDIRECT_FROM_KEY) || '/'
+    const savedFrom = getSafeRedirectPath(
+      sessionStorage.getItem(REDIRECT_FROM_KEY),
+    )
     sessionStorage.removeItem(REDIRECT_FROM_KEY)
     navigate(savedFrom, { replace: true })
   }, [user, loading, location.pathname, navigate])
@@ -68,22 +79,18 @@ export function AuthProvider({ children }) {
   }, [])
 
   const saveRedirectTo = (redirectTo = '/') => {
-    sessionStorage.setItem(REDIRECT_FROM_KEY, redirectTo)
+    sessionStorage.setItem(
+      REDIRECT_FROM_KEY,
+      getSafeRedirectPath(redirectTo),
+    )
   }
 
+  // 使用 popup：現代瀏覽器會阻擋第三方 cookie，signInWithRedirect
+  // 在 localhost 常會立刻彈回登入頁且無法完成登入（Firebase 官方建議改用 popup）。
   const signInWithGoogle = async (redirectTo = '/') => {
     saveRedirectTo(redirectTo)
     const provider = new GoogleAuthProvider()
-
-    try {
-      await signInWithPopup(auth, provider)
-    } catch (error) {
-      if (error.code === 'auth/popup-blocked') {
-        await signInWithRedirect(auth, provider)
-        return
-      }
-      throw error
-    }
+    await signInWithPopup(auth, provider)
   }
 
   const signInWithEmail = async (email, password, redirectTo = '/') => {
@@ -100,7 +107,7 @@ export function AuthProvider({ children }) {
   const consumeRedirectFrom = useCallback(() => {
     const path = sessionStorage.getItem(REDIRECT_FROM_KEY)
     sessionStorage.removeItem(REDIRECT_FROM_KEY)
-    return path
+    return getSafeRedirectPath(path)
   }, [])
 
   const signOut = () => firebaseSignOut(auth)
