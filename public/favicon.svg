@@ -1,17 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
   <rect width="64" height="64" rx="14" fill="#09090b"/>
-  <!-- film reel -->
   <circle cx="32" cy="32" r="22" stroke="#fbbf24" stroke-width="3.5"/>
-  <circle cx="32" cy="32" r="8" fill="#fbbf24"/>
-  <!-- sprocket holes -->
-  <circle cx="32" cy="14" r="3.2" fill="#fbbf24"/>
-  <circle cx="32" cy="50" r="3.2" fill="#fbbf24"/>
-  <circle cx="14" cy="32" r="3.2" fill="#fbbf24"/>
-  <circle cx="50" cy="32" r="3.2" fill="#fbbf24"/>
-  <circle cx="19.3" cy="19.3" r="2.6" fill="#f59e0b"/>
-  <circle cx="44.7" cy="19.3" r="2.6" fill="#f59e0b"/>
-  <circle cx="19.3" cy="44.7" r="2.6" fill="#f59e0b"/>
-  <circle cx="44.7" cy="44.7" r="2.6" fill="#f59e0b"/>
-  <!-- play triangle -->
-  <path d="M29.5 26.5 L29.5 37.5 L39 32 Z" fill="#09090b"/>
+  <g fill="#fbbf24">
+    <path d="M32 12.5l5.2 14.2-5.2-2.1z"/>
+    <path d="M48.4 19.6l-9.4 11.6-2.1-5.2z"/>
+    <path d="M51.5 36l-14.2 5.2 2.1-5.2z"/>
+    <path d="M44.4 49.4l-11.6-9.4 5.2-2.1z"/>
+    <path d="M28 51.5l-5.2-14.2 5.2 2.1z"/>
+    <path d="M15.6 44.4l9.4-11.6 2.1 5.2z"/>
+    <path d="M12.5 28l14.2-5.2-2.1 5.2z"/>
+    <path d="M19.6 15.6l11.6 9.4-5.2 2.1z"/>
+  </g>
+  <circle cx="32" cy="32" r="8" fill="#09090b"/>
+  <path fill="#fbbf24" d="M29.2 27.2v9.6L39 32z"/>
 </svg>
