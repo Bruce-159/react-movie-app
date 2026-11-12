@@ -1,13 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import MovieCard from './MovieCard.jsx'
 import {
-  API_KEY,
+  ErrorState,
+  GrainOverlay,
+  LoadingState,
+  MovieGrid,
+  SectionTitle,
+} from './PageStatus.jsx'
+import Pagination from './Pagination.jsx'
+import { useTmdb } from '../hooks/useTmdb.js'
+import { clampTotalPages, filterMoviesWithPoster } from '../lib/tmdb.js'
+import {
+  buildDiscoverParams,
   filterBtnClass,
-  filterMoviesWithPoster,
-  fetchDiscoverPage,
   GENRES,
-  GRAIN_BACKGROUND,
   readDiscoverState,
   SORT_FIELDS,
   SORT_ORDERS,
@@ -47,10 +54,12 @@ export default function DiscoverPage({
     [searchParams],
   )
 
-  const [movies, setMovies] = useState([])
-  const [totalPages, setTotalPages] = useState(1)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const { data, loading, error } = useTmdb(
+    '/discover/movie',
+    buildDiscoverParams({ page, genreId, yearFilterId, sortBy }, fetchOptions),
+  )
+  const movies = useMemo(() => filterMoviesWithPoster(data?.results), [data])
+  const totalPages = clampTotalPages(data?.total_pages)
 
   const returnTo = useMemo(() => {
     const qs = searchParams.toString()
@@ -68,52 +77,6 @@ export default function DiscoverPage({
     })
     setSearchParams(next, { replace: true })
   }
-
-  useEffect(() => {
-    if (!API_KEY) {
-      setError('缺少 VITE_TMDB_API_KEY，請檢查 .env')
-      setLoading(false)
-      return
-    }
-
-    let cancelled = false
-
-    async function loadDiscover() {
-      setLoading(true)
-      setError(null)
-      try {
-        const data = await fetchDiscoverPage(
-          page,
-          genreId,
-          yearFilterId,
-          sortBy,
-          fetchOptions,
-        )
-        const list = filterMoviesWithPoster(
-          Array.isArray(data.results) ? data.results : [],
-        )
-
-        if (!cancelled) {
-          setMovies(list)
-          setTotalPages(Math.max(1, data.total_pages ?? 1))
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e.message || '無法載入電影資料')
-          setMovies([])
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    }
-
-    loadDiscover()
-    return () => {
-      cancelled = true
-    }
-  }, [page, genreId, yearFilterId, sortBy, fetchOptions])
 
   const selectYear = (nextYearId) => {
     if (nextYearId === yearFilterId) return
@@ -135,19 +98,9 @@ export default function DiscoverPage({
     updateDiscoverParams({ sortOrder: nextSortOrder, page: 1 })
   }
 
-  const goToPage = (nextPage) => {
-    if (nextPage < 1 || nextPage > totalPages || nextPage === page) return
-    updateDiscoverParams({ page: nextPage })
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
   return (
     <main className="relative min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
-      <div
-        className="pointer-events-none absolute inset-0 z-0 opacity-[0.04]"
-        aria-hidden="true"
-        style={GRAIN_BACKGROUND}
-      />
+      <GrainOverlay />
 
       <div className="relative z-10 px-5 pb-16 pt-8 sm:px-8 md:px-10">
         <header className="mb-8">
@@ -254,75 +207,36 @@ export default function DiscoverPage({
         </section>
 
         <section aria-label={resultsAriaLabel}>
-          <div className="mb-8 flex items-center gap-3">
-            <span className="h-7 w-1 rounded-full bg-amber-500" aria-hidden="true" />
-            <h2 className="m-0 text-xl font-semibold tracking-tight !text-white sm:text-2xl">
-              搜尋結果
-            </h2>
-            <div className="h-px flex-1 bg-gradient-to-r from-zinc-700/80 to-transparent" />
-          </div>
+          <SectionTitle>搜尋結果</SectionTitle>
 
-          {loading && (
-            <div className="flex flex-col items-center justify-center gap-4 py-20">
-              <div
-                className="h-10 w-10 animate-spin rounded-full border-2 border-zinc-700 border-t-amber-500"
-                role="status"
-                aria-label="載入中"
-              />
-              <p className="text-sm text-zinc-500">載入電影資料中…</p>
-            </div>
-          )}
+          {loading && <LoadingState message="載入電影資料中…" />}
 
-          {!loading && error && (
-            <div className="rounded-xl border border-red-500/30 bg-red-950/40 px-5 py-4 text-red-300">
-              {error}
-            </div>
-          )}
+          {!loading && error && <ErrorState message={error} />}
 
           {!loading && !error && movies.length === 0 && (
             <p className="py-12 text-center text-zinc-500">此頁沒有電影資料。</p>
           )}
 
           {!loading && !error && movies.length > 0 && (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5">
+            <MovieGrid>
               {movies.map((movie) => (
                 <MovieCard
                   key={movie.id}
                   movie={movie}
-                  variant="cinematic"
                   returnTo={returnTo}
                   showRating={showRating}
                 />
               ))}
-            </div>
+            </MovieGrid>
           )}
         </section>
 
-        {!loading && !error && totalPages > 1 && (
-          <nav
-            className="mt-12 flex items-center justify-center gap-4"
-            aria-label="分頁導覽"
-          >
-            <button
-              type="button"
-              className="rounded-full border border-white/10 bg-zinc-900/60 px-5 py-2 text-sm font-medium text-zinc-300 transition hover:border-amber-500/30 hover:bg-zinc-800 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={() => goToPage(page - 1)}
-              disabled={page <= 1}
-            >
-              上一頁
-            </button>
-            <span className="text-sm text-zinc-500">
-              第 {page} 頁，共 {totalPages} 頁
-            </span>
-            <button
-              type="button"
-              className="rounded-full border border-white/10 bg-zinc-900/60 px-5 py-2 text-sm font-medium text-zinc-300 transition hover:border-amber-500/30 hover:bg-zinc-800 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={() => goToPage(page + 1)}
-              disabled={page >= totalPages}
-            >
-              下一頁
-            </button>
-          </nav>
+        {!loading && !error && (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onChange={(nextPage) => updateDiscoverParams({ page: nextPage })}
+          />
         )}
       </div>
     </main>

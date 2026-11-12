@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import MovieCard from '../components/MovieCard.jsx'
-
-const API_KEY = import.meta.env.VITE_TMDB_API_KEY
-
-const TMDB_IMAGE_PROFILE_BASE = 'https://image.tmdb.org/t/p/w342'
-
-const GRAIN_STYLE = {
-  backgroundImage:
-    'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.85\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\'/%3E%3C/svg%3E")',
-}
+import {
+  ErrorState,
+  GrainOverlay,
+  LoadingState,
+  MovieGrid,
+  SectionTitle,
+} from '../components/PageStatus.jsx'
+import { useTmdbRequests } from '../hooks/useTmdb.js'
+import { tmdbImage } from '../lib/tmdb.js'
 
 function hasText(value) {
   return typeof value === 'string' && value.trim().length > 0
@@ -60,26 +60,30 @@ function toMovieCardItem(item) {
   }
 }
 
+/** 簡介預設顯示 3 行，超過才出現展開按鈕。換人時由父層以 key 重建，展開狀態自動重設。 */
 function BiographyText({ text }) {
   const [expanded, setExpanded] = useState(false)
   const [canExpand, setCanExpand] = useState(false)
   const textRef = useRef(null)
 
   useEffect(() => {
-    setExpanded(false)
-  }, [text])
-
-  useEffect(() => {
     const el = textRef.current
-    if (!el || expanded) return
+    if (!el || expanded) return undefined
 
     const checkOverflow = () => {
       setCanExpand(el.scrollHeight > el.clientHeight + 1)
     }
 
-    checkOverflow()
+    // 以 microtask 在 effect 之後立即量測（不用 requestAnimationFrame，背景分頁時它會暫停）
+    let active = true
+    Promise.resolve().then(() => {
+      if (active) checkOverflow()
+    })
     window.addEventListener('resize', checkOverflow)
-    return () => window.removeEventListener('resize', checkOverflow)
+    return () => {
+      active = false
+      window.removeEventListener('resize', checkOverflow)
+    }
   }, [text, expanded])
 
   return (
@@ -116,163 +120,72 @@ function Person() {
     return qs ? `/person/${personId}?${qs}` : `/person/${personId}`
   }, [personId, searchParams])
 
-  const [personEn, setPersonEn] = useState(null)
-  const [personZhTw, setPersonZhTw] = useState(null)
-  const [movieCredits, setMovieCredits] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const { data, loading, error } = useTmdbRequests(
+    personId
+      ? [
+          [`/person/${personId}`, { language: 'en-US' }],
+          [`/person/${personId}`, { language: 'zh-TW' }],
+          [`/person/${personId}/movie_credits`, { language: 'zh-TW' }],
+        ]
+      : null,
+  )
+  const [personEn, personZhTw, movieCredits] = data ?? []
 
   const person = useMemo(() => {
     if (!personEn) return null
     return resolvePersonDisplay(personEn, personZhTw)
   }, [personEn, personZhTw])
 
-  const profileUrl = useMemo(() => {
-    if (!person?.profile_path) return null
-    return `${TMDB_IMAGE_PROFILE_BASE}${person.profile_path}`
-  }, [person])
+  const profileUrl = tmdbImage(person?.profile_path, 'w342')
 
-  const personInfo = useMemo(() => {
+  const detailFields = useMemo(() => {
     if (!person) return []
 
     const items = []
-
-    if (hasText(person.biography)) {
-      items.push({ type: 'biography', label: '簡介', value: person.biography.trim() })
-    }
     if (hasText(person.birthday)) {
-      items.push({ type: 'field', label: '生日', value: formatDate(person.birthday) })
+      items.push({ label: '生日', value: formatDate(person.birthday) })
     }
     if (hasText(person.deathday)) {
-      items.push({ type: 'field', label: '忌日', value: formatDate(person.deathday) })
+      items.push({ label: '忌日', value: formatDate(person.deathday) })
     }
     if (hasText(person.place_of_birth)) {
-      items.push({ type: 'field', label: '出生地', value: person.place_of_birth.trim() })
+      items.push({ label: '出生地', value: person.place_of_birth.trim() })
     }
-
     return items
   }, [person])
 
-  const movies = useMemo(() => {
+  const uniqueMovies = useMemo(() => {
     if (!movieCredits) return []
 
-    if (role === 'director') {
-      return (movieCredits.crew || [])
-        .filter((item) => item.job === 'Director')
-        .map(toMovieCardItem)
-    }
+    const movies =
+      role === 'director'
+        ? (movieCredits.crew || []).filter((item) => item.job === 'Director')
+        : movieCredits.cast || []
 
-    return (movieCredits.cast || []).map(toMovieCardItem)
-  }, [movieCredits, role])
-
-  const uniqueMovies = useMemo(() => {
     const seen = new Set()
-    const list = movies.filter((movie) => {
-      if (seen.has(movie.id)) return false
-      seen.add(movie.id)
-      return true
-    })
-
-    return list.sort((a, b) => {
-      const dateA = a.release_date || ''
-      const dateB = b.release_date || ''
-      return dateB.localeCompare(dateA)
-    })
-  }, [movies])
-
-  useEffect(() => {
-    if (!API_KEY) {
-      setError('缺少 VITE_TMDB_API_KEY，請檢查 .env')
-      setLoading(false)
-      return
-    }
-    if (!personId) {
-      setError('找不到人物 ID')
-      setLoading(false)
-      return
-    }
-
-    let cancelled = false
-
-    async function loadPerson() {
-      setLoading(true)
-      setError(null)
-      setPersonEn(null)
-      setPersonZhTw(null)
-      setMovieCredits(null)
-
-      try {
-        const personEnUrl = `https://api.themoviedb.org/3/person/${personId}?api_key=${API_KEY}&language=en-US`
-        const personZhTwUrl = `https://api.themoviedb.org/3/person/${personId}?api_key=${API_KEY}&language=zh-TW`
-        const creditsUrl = `https://api.themoviedb.org/3/person/${personId}/movie_credits?api_key=${API_KEY}&language=zh-TW`
-
-        const [personEnRes, personZhTwRes, creditsRes] = await Promise.all([
-          fetch(personEnUrl),
-          fetch(personZhTwUrl),
-          fetch(creditsUrl),
-        ])
-
-        if (!personEnRes.ok) throw new Error(`API 錯誤：${personEnRes.status}`)
-        if (!personZhTwRes.ok) throw new Error(`API 錯誤：${personZhTwRes.status}`)
-        if (!creditsRes.ok) throw new Error(`API 錯誤：${creditsRes.status}`)
-
-        const [personEnData, personZhTwData, creditsData] = await Promise.all([
-          personEnRes.json(),
-          personZhTwRes.json(),
-          creditsRes.json(),
-        ])
-
-        if (!cancelled) {
-          setPersonEn(personEnData)
-          setPersonZhTw(personZhTwData)
-          setMovieCredits(creditsData)
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e.message || '無法載入人物資料')
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    loadPerson()
-    return () => {
-      cancelled = true
-    }
-  }, [personId])
+    return movies
+      .map(toMovieCardItem)
+      .filter((movie) => {
+        if (seen.has(movie.id)) return false
+        seen.add(movie.id)
+        return true
+      })
+      .sort((a, b) => (b.release_date || '').localeCompare(a.release_date || ''))
+  }, [movieCredits, role])
 
   const moviesSectionTitle =
     role === 'director' ? '參與執導的電影' : '參與演出的電影'
 
-  const biography = personInfo.find((item) => item.type === 'biography')
-  const detailFields = personInfo.filter((item) => item.type === 'field')
-
   return (
     <main className="relative min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
-      <div
-        className="pointer-events-none absolute inset-0 z-0 opacity-[0.04]"
-        aria-hidden="true"
-        style={GRAIN_STYLE}
-      />
+      <GrainOverlay />
 
       <div className="relative z-10 px-5 pb-16 pt-8 sm:px-8 md:px-10">
-        {loading && (
-          <div className="flex flex-col items-center justify-center gap-4 py-24">
-            <div
-              className="h-10 w-10 animate-spin rounded-full border-2 border-zinc-700 border-t-amber-500"
-              role="status"
-              aria-label="載入中"
-            />
-            <p className="text-sm text-zinc-500">載入人物資料中…</p>
-          </div>
-        )}
+        {loading && <LoadingState message="載入人物資料中…" className="py-24" />}
 
-        {!loading && error && (
-          <div className="rounded-xl border border-red-500/30 bg-red-950/40 px-5 py-4 text-red-300">
-            {error}
-          </div>
-        )}
+        {!loading && !personId && <ErrorState message="找不到人物 ID" />}
+
+        {!loading && error && <ErrorState message={error} />}
 
         {!loading && !error && person && (
           <>
@@ -304,7 +217,9 @@ function Person() {
                   )}
                 </div>
 
-                {biography && <BiographyText text={biography.value} />}
+                {hasText(person.biography) && (
+                  <BiographyText key={personId} text={person.biography} />
+                )}
 
                 {detailFields.length > 0 && (
                   <dl className="space-y-2 rounded-xl border border-white/10 bg-zinc-900/40 p-4 text-sm backdrop-blur-sm">
@@ -320,30 +235,24 @@ function Person() {
             </header>
 
             <section className="mt-14 text-left">
-              <div className="mb-8 flex items-center gap-3">
-                <span className="h-7 w-1 rounded-full bg-amber-500" aria-hidden="true" />
-                <h2 className="m-0 text-xl font-semibold tracking-tight !text-white sm:text-2xl">
-                  {moviesSectionTitle}
-                </h2>
-                <div className="h-px flex-1 bg-gradient-to-r from-zinc-700/80 to-transparent" />
-                {uniqueMovies.length > 0 && (
-                  <span className="text-sm text-zinc-500">{uniqueMovies.length} 部</span>
-                )}
-              </div>
+              <SectionTitle
+                aside={
+                  uniqueMovies.length > 0 && (
+                    <span className="text-sm text-zinc-500">{uniqueMovies.length} 部</span>
+                  )
+                }
+              >
+                {moviesSectionTitle}
+              </SectionTitle>
 
               {uniqueMovies.length === 0 ? (
                 <p className="py-12 text-center text-zinc-500">目前沒有可顯示的電影。</p>
               ) : (
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5">
+                <MovieGrid>
                   {uniqueMovies.map((movie) => (
-                    <MovieCard
-                      key={movie.id}
-                      movie={movie}
-                      variant="cinematic"
-                      returnTo={personReturnTo}
-                    />
+                    <MovieCard key={movie.id} movie={movie} returnTo={personReturnTo} />
                   ))}
-                </div>
+                </MovieGrid>
               )}
             </section>
           </>

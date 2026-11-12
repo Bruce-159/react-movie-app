@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { getSafeRedirectPath, useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../contexts/useAuth.js'
+import { getSafeRedirectPath } from '../utils/navigation.js'
 
 function getAuthErrorMessage(error) {
   switch (error?.code) {
@@ -28,6 +29,8 @@ function getAuthErrorMessage(error) {
       return '瀏覽器封鎖了登入視窗，請允許此網站的彈出視窗後再試。'
     case 'auth/popup-closed-by-user':
       return '已取消 Google 登入。'
+    case 'auth/missing-email':
+      return '請先填寫電子郵件。'
     default:
       return error?.message || '操作失敗，請稍後再試。'
   }
@@ -39,10 +42,10 @@ const inputClass =
 export default function Login() {
   const {
     loading,
-    redirectError,
     signInWithGoogle,
     signInWithEmail,
     signUpWithEmail,
+    sendPasswordReset,
   } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
@@ -51,20 +54,17 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [googleSubmitting, setGoogleSubmitting] = useState(false)
+  const [resetSubmitting, setResetSubmitting] = useState(false)
 
   const from = getSafeRedirectPath(location.state?.from)
-
-  useEffect(() => {
-    if (redirectError) {
-      setError(getAuthErrorMessage(redirectError))
-    }
-  }, [redirectError])
 
   const switchMode = (nextMode) => {
     setMode(nextMode)
     setError(null)
+    setNotice(null)
     setPassword('')
     setConfirmPassword('')
   }
@@ -72,6 +72,7 @@ export default function Login() {
   const handleEmailSubmit = async (event) => {
     event.preventDefault()
     setError(null)
+    setNotice(null)
 
     const trimmedEmail = email.trim()
     if (!trimmedEmail || !password) {
@@ -98,8 +99,30 @@ export default function Login() {
     }
   }
 
+  const handlePasswordReset = async () => {
+    setError(null)
+    setNotice(null)
+
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail) {
+      setError('請先在上方填寫註冊時使用的電子郵件，再按「忘記密碼？」。')
+      return
+    }
+
+    setResetSubmitting(true)
+    try {
+      await sendPasswordReset(trimmedEmail)
+      setNotice(`若 ${trimmedEmail} 已註冊，重設密碼信已寄出，請到信箱收信。`)
+    } catch (e) {
+      setError(getAuthErrorMessage(e))
+    } finally {
+      setResetSubmitting(false)
+    }
+  }
+
   const handleGoogleSignIn = async () => {
     setError(null)
+    setNotice(null)
     setGoogleSubmitting(true)
     try {
       await signInWithGoogle(from)
@@ -122,7 +145,7 @@ export default function Login() {
     )
   }
 
-  const isBusy = submitting || googleSubmitting
+  const isBusy = submitting || googleSubmitting || resetSubmitting
 
   return (
     <main className="px-5 py-16 sm:px-8 md:px-10">
@@ -151,9 +174,21 @@ export default function Login() {
           </div>
 
           <div>
-            <label htmlFor="login-password" className="mb-1.5 block text-sm text-zinc-400">
-              密碼
-            </label>
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <label htmlFor="login-password" className="block text-sm text-zinc-400">
+                密碼
+              </label>
+              {mode === 'login' && (
+                <button
+                  type="button"
+                  onClick={handlePasswordReset}
+                  disabled={isBusy}
+                  className="text-sm text-amber-300/90 underline decoration-amber-500/40 underline-offset-2 transition hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {resetSubmitting ? '寄送中…' : '忘記密碼？'}
+                </button>
+              )}
+            </div>
             <input
               id="login-password"
               type="password"
@@ -235,6 +270,12 @@ export default function Login() {
         {error && (
           <p className="mt-4 text-center text-sm text-red-400" role="alert">
             {error}
+          </p>
+        )}
+
+        {notice && (
+          <p className="mt-4 text-center text-sm text-emerald-400" role="status">
+            {notice}
           </p>
         )}
 

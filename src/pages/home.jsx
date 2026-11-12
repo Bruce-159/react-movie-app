@@ -1,84 +1,34 @@
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import MovieCard from '../components/MovieCard.jsx'
+import {
+  ErrorState,
+  GrainOverlay,
+  LoadingState,
+  MovieGrid,
+  SectionTitle,
+} from '../components/PageStatus.jsx'
+import { useTmdb } from '../hooks/useTmdb.js'
+import { getDisplayRating, tmdbImage } from '../lib/tmdb.js'
 
-const API_KEY = import.meta.env.VITE_TMDB_API_KEY
-const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p'
-
-const NOW_PLAYING_URL = `https://api.themoviedb.org/3/movie/now_playing?api_key=${API_KEY}&language=zh-TW&region=TW&page=1`
+const NOW_PLAYING_PARAMS = { language: 'zh-TW', region: 'TW', page: 1 }
 
 function Home() {
   const navigate = useNavigate()
-  const [movies, setMovies] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const { data, loading, error } = useTmdb('/movie/now_playing', NOW_PLAYING_PARAMS)
 
-  useEffect(() => {
-    if (!API_KEY) {
-      setError('缺少 VITE_TMDB_API_KEY，請檢查 .env')
-      setLoading(false)
-      return
-    }
-
-    let cancelled = false
-
-    async function loadMovies() {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await fetch(NOW_PLAYING_URL)
-        if (!res.ok) {
-          throw new Error(`API 錯誤：${res.status}`)
-        }
-
-        const data = await res.json()
-        const list = Array.isArray(data.results) ? data.results : []
-        const sorted = [...list].sort(
-          (a, b) => (b.popularity ?? 0) - (a.popularity ?? 0),
-        )
-
-        if (!cancelled) {
-          setMovies(sorted)
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e.message || '無法載入電影資料')
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    }
-
-    loadMovies()
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const movies = useMemo(() => {
+    const list = Array.isArray(data?.results) ? data.results : []
+    return [...list].sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
+  }, [data])
 
   const featured = movies[0]
-  const featuredBackdrop = featured?.backdrop_path
-    ? `${TMDB_IMAGE_BASE}/w1280${featured.backdrop_path}`
-    : null
-  const featuredRating =
-    typeof featured?.vote_count === 'number' &&
-    featured.vote_count >= 10 &&
-    typeof featured?.vote_average === 'number'
-      ? featured.vote_average.toFixed(1)
-      : null
+  const featuredBackdrop = tmdbImage(featured?.backdrop_path, 'w1280')
+  const featuredRating = getDisplayRating(featured)
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
-      {/* 電影感顆粒紋理 */}
-      <div
-        className="pointer-events-none absolute inset-0 z-0 opacity-[0.04]"
-        aria-hidden="true"
-        style={{
-          backgroundImage:
-            'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.85\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\'/%3E%3C/svg%3E")',
-        }}
-      />
+      <GrainOverlay />
 
       {/* Hero：以熱門榜首電影的劇照作為背景 */}
       <section className="relative z-10">
@@ -152,41 +102,22 @@ function Home() {
         className="relative z-10 px-5 pb-16 pt-4 text-left sm:px-8 md:px-10"
         aria-label="近期上映熱門電影列表"
       >
-        <div className="mb-8 flex items-center gap-3">
-          <span className="h-7 w-1 rounded-full bg-amber-500" aria-hidden="true" />
-          <h2 className="m-0 text-xl font-semibold tracking-tight !text-white sm:text-2xl">
-            現正熱映
-          </h2>
-          <div className="h-px flex-1 bg-gradient-to-r from-zinc-700/80 to-transparent" />
-        </div>
+        <SectionTitle>現正熱映</SectionTitle>
 
-        {loading && (
-          <div className="flex flex-col items-center justify-center gap-4 py-20">
-            <div
-              className="h-10 w-10 animate-spin rounded-full border-2 border-zinc-700 border-t-amber-500"
-              role="status"
-              aria-label="載入中"
-            />
-            <p className="text-sm text-zinc-500">載入電影資料中…</p>
-          </div>
-        )}
+        {loading && <LoadingState message="載入電影資料中…" />}
 
-        {!loading && error && (
-          <div className="rounded-xl border border-red-500/30 bg-red-950/40 px-5 py-4 text-red-300">
-            {error}
-          </div>
-        )}
+        {!loading && error && <ErrorState message={error} />}
 
         {!loading && !error && movies.length === 0 && (
           <p className="py-12 text-center text-zinc-500">目前沒有可顯示的電影。</p>
         )}
 
         {!loading && !error && movies.length > 0 && (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5">
+          <MovieGrid>
             {movies.map((movie) => (
-              <MovieCard key={movie.id} movie={movie} variant="cinematic" returnTo="/" />
+              <MovieCard key={movie.id} movie={movie} returnTo="/" />
             ))}
-          </div>
+          </MovieGrid>
         )}
       </section>
     </main>

@@ -1,0 +1,40 @@
+rules_version = '2';
+
+// CineScope 的 Firestore 安全規則。
+// 這份是依程式實際用法（src/hooks/useMovieList.js）整理的版本，repo 不會自動部署；
+// 請到 Firebase 主控台 → Firestore Database → 規則，比對後貼上並發布。
+//
+// 資料結構：
+//   users/{uid}/favorites/{movieId}
+//   users/{uid}/likes/{movieId}
+//   每筆欄位：movieId、title、poster_path、vote_average、vote_count、addedAt
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function isMovieList(listName) {
+      return listName in ['favorites', 'likes'];
+    }
+
+    // 只允許程式會寫入的欄位，且 movieId 必須與文件 ID 一致
+    function isValidMovieEntry(movieId) {
+      let data = request.resource.data;
+      return data.keys().hasOnly(
+          ['movieId', 'title', 'poster_path', 'vote_average', 'vote_count', 'addedAt'])
+        && data.movieId is int
+        && string(data.movieId) == movieId
+        && data.title is string
+        && data.addedAt == request.time;
+    }
+
+    match /users/{userId}/{listName}/{movieId} {
+      allow read, delete: if isOwner(userId) && isMovieList(listName);
+      allow create, update: if isOwner(userId)
+        && isMovieList(listName)
+        && isValidMovieEntry(movieId);
+    }
+  }
+}

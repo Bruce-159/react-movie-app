@@ -1,26 +1,42 @@
-export const API_KEY = import.meta.env.VITE_TMDB_API_KEY
+/** 單獨列出的近年年份數量，更早的併成區間 */
+const RECENT_YEAR_COUNT = 16
+/** 「2000以前」的分界年 */
+const LEGACY_YEAR = 2000
 
-export const YEAR_FILTERS = [
-  { id: 'all', label: '全部' },
-  { id: '2026', label: '2026', gte: '2026-01-01', lte: '2026-12-31' },
-  { id: '2025', label: '2025', gte: '2025-01-01', lte: '2025-12-31' },
-  { id: '2024', label: '2024', gte: '2024-01-01', lte: '2024-12-31' },
-  { id: '2023', label: '2023', gte: '2023-01-01', lte: '2023-12-31' },
-  { id: '2022', label: '2022', gte: '2022-01-01', lte: '2022-12-31' },
-  { id: '2021', label: '2021', gte: '2021-01-01', lte: '2021-12-31' },
-  { id: '2020', label: '2020', gte: '2020-01-01', lte: '2020-12-31' },
-  { id: '2019', label: '2019', gte: '2019-01-01', lte: '2019-12-31' },
-  { id: '2018', label: '2018', gte: '2018-01-01', lte: '2018-12-31' },
-  { id: '2017', label: '2017', gte: '2017-01-01', lte: '2017-12-31' },
-  { id: '2016', label: '2016', gte: '2016-01-01', lte: '2016-12-31' },
-  { id: '2015', label: '2015', gte: '2015-01-01', lte: '2015-12-31' },
-  { id: '2014', label: '2014', gte: '2014-01-01', lte: '2014-12-31' },
-  { id: '2013', label: '2013', gte: '2013-01-01', lte: '2013-12-31' },
-  { id: '2012', label: '2012', gte: '2012-01-01', lte: '2012-12-31' },
-  { id: '2011', label: '2011', gte: '2011-01-01', lte: '2011-12-31' },
-  { id: '2001-2010', label: '2001至2010', gte: '2001-01-01', lte: '2010-12-31' },
-  { id: 'before-2000', label: '2000以前', lte: '2000-12-31' },
-]
+function buildYearFilters(currentYear) {
+  const oldestRecentYear = currentYear - RECENT_YEAR_COUNT + 1
+  const rangeStart = LEGACY_YEAR + 1
+  const rangeEnd = oldestRecentYear - 1
+
+  const recent = Array.from({ length: RECENT_YEAR_COUNT }, (_, index) => {
+    const year = currentYear - index
+    return {
+      id: String(year),
+      label: String(year),
+      gte: `${year}-01-01`,
+      lte: `${year}-12-31`,
+    }
+  })
+
+  const filters = [{ id: 'all', label: '全部' }, ...recent]
+  if (rangeEnd >= rangeStart) {
+    filters.push({
+      id: `${rangeStart}-${rangeEnd}`,
+      label: `${rangeStart}至${rangeEnd}`,
+      gte: `${rangeStart}-01-01`,
+      lte: `${rangeEnd}-12-31`,
+    })
+  }
+  filters.push({
+    id: `before-${LEGACY_YEAR}`,
+    label: `${LEGACY_YEAR}以前`,
+    lte: `${LEGACY_YEAR}-12-31`,
+  })
+  return filters
+}
+
+/** 依今年自動產生：今年往回 16 年，再加上區間與「2000以前」 */
+export const YEAR_FILTERS = buildYearFilters(new Date().getFullYear())
 
 export const GENRES = [
   { id: 28, name: '動作' },
@@ -67,9 +83,14 @@ const YEAR_IDS = new Set(YEAR_FILTERS.map((f) => f.id))
 const GENRE_IDS = new Set(GENRES.map((g) => String(g.id)))
 const SORT_FIELD_IDS = new Set(SORT_FIELDS.map((o) => o.id))
 
-export function readDiscoverState(searchParams) {
+/** 從網址參數讀出頁碼，非正整數一律視為第 1 頁 */
+export function readPageParam(searchParams) {
   const pageRaw = Number.parseInt(searchParams.get('page') ?? '1', 10)
-  const page = Number.isFinite(pageRaw) && pageRaw >= 1 ? pageRaw : 1
+  return Number.isFinite(pageRaw) && pageRaw >= 1 ? pageRaw : 1
+}
+
+export function readDiscoverState(searchParams) {
+  const page = readPageParam(searchParams)
 
   const yearRaw = searchParams.get('year') ?? DEFAULT_YEAR
   const yearFilterId = YEAR_IDS.has(yearRaw) ? yearRaw : DEFAULT_YEAR
@@ -113,65 +134,32 @@ function getYearFilter(yearFilterId) {
   return YEAR_FILTERS.find((f) => f.id === yearFilterId) ?? YEAR_FILTERS[0]
 }
 
-function buildDiscoverParams(
-  page,
-  genreId,
-  yearFilterId,
-  sortBy,
+/**
+ * 組出 TMDB `/discover/movie` 的查詢參數（不含 api_key）。
+ */
+export function buildDiscoverParams(
+  { page, genreId, yearFilterId, sortBy },
   { originCountry, voteCountGte, minReleaseGteWhenAll } = {},
 ) {
-  const params = new URLSearchParams({
-    api_key: API_KEY,
+  const params = {
     language: 'zh-TW',
     sort_by: sortBy,
-    page: String(page),
-    'with_runtime.gte': String(MIN_RUNTIME_MINUTES),
-  })
-
-  if (originCountry) {
-    params.set('with_origin_country', originCountry)
-  }
-  if (voteCountGte != null) {
-    params.set('vote_count.gte', String(voteCountGte))
+    page,
+    'with_runtime.gte': MIN_RUNTIME_MINUTES,
+    with_origin_country: originCountry,
+    'vote_count.gte': voteCountGte,
+    with_genres: genreId,
   }
 
   const yearFilter = getYearFilter(yearFilterId)
-  if (yearFilterId === 'all' && minReleaseGteWhenAll) {
-    params.set('primary_release_date.gte', minReleaseGteWhenAll)
+  if (yearFilterId === DEFAULT_YEAR && minReleaseGteWhenAll) {
+    params['primary_release_date.gte'] = minReleaseGteWhenAll
   } else {
-    if (yearFilter.gte) {
-      params.set('primary_release_date.gte', yearFilter.gte)
-    }
-    if (yearFilter.lte) {
-      params.set('primary_release_date.lte', yearFilter.lte)
-    }
-  }
-
-  if (genreId != null) {
-    params.set('with_genres', String(genreId))
+    params['primary_release_date.gte'] = yearFilter.gte
+    params['primary_release_date.lte'] = yearFilter.lte
   }
 
   return params
-}
-
-function buildDiscoverUrl(page, genreId, yearFilterId, sortBy, options) {
-  return `https://api.themoviedb.org/3/discover/movie?${buildDiscoverParams(page, genreId, yearFilterId, sortBy, options).toString()}`
-}
-
-export function hasPoster(movie) {
-  return typeof movie?.poster_path === 'string' && movie.poster_path.length > 0
-}
-
-export function filterMoviesWithPoster(movies) {
-  return movies.filter(hasPoster)
-}
-
-export async function fetchDiscoverPage(page, genreId, yearFilterId, sortBy, options) {
-  const res = await fetch(buildDiscoverUrl(page, genreId, yearFilterId, sortBy, options))
-  if (!res.ok) {
-    throw new Error(`API 錯誤：${res.status}`)
-  }
-  return res.json()
 }
 
 export const filterBtnClass = (active) =>
@@ -181,8 +169,3 @@ export const filterBtnClass = (active) =>
       ? 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/40'
       : 'bg-zinc-900/60 text-zinc-400 ring-1 ring-white/10 hover:bg-zinc-800 hover:text-zinc-200',
   ].join(' ')
-
-export const GRAIN_BACKGROUND = {
-  backgroundImage:
-    'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.85\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\'/%3E%3C/svg%3E")',
-}

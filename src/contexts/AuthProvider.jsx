@@ -1,47 +1,22 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-} from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
-  getRedirectResult,
   onAuthStateChanged,
   sendEmailVerification,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut as firebaseSignOut,
 } from 'firebase/auth'
 import { auth } from '../firebase'
+import { getSafeRedirectPath } from '../utils/navigation.js'
+import { AuthContext, useAuth } from './useAuth.js'
 
 const REDIRECT_FROM_KEY = 'authRedirectFrom'
 
-// React StrictMode 會 mount 兩次，redirect 結果只能取一次
-let redirectResultPromise = null
-
-function getRedirectResultOnce() {
-  if (!redirectResultPromise) {
-    redirectResultPromise = getRedirectResult(auth)
-  }
-  return redirectResultPromise
-}
-
-/** 只允許站內相對路徑，避免異常 navigate 造成空白頁 */
-export function getSafeRedirectPath(raw) {
-  if (!raw || typeof raw !== 'string') return '/'
-  if (!raw.startsWith('/') || raw.startsWith('//')) return '/'
-  if (raw === '/login' || raw.startsWith('/login?') || raw.startsWith('/login#')) {
-    return '/'
-  }
-  return raw
-}
-
-const AuthContext = createContext(null)
-
+/** 已登入的人停在 /login 時，導回登入前的頁面 */
 function AuthRedirectHandler() {
   const { user, loading } = useAuth()
   const navigate = useNavigate()
@@ -63,18 +38,14 @@ function AuthRedirectHandler() {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [redirectError, setRedirectError] = useState(null)
+  // Firebase 的 user.reload() 會原地更新同一個物件，用版本號讓畫面重繪
+  const [, setUserVersion] = useState(0)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser)
       setLoading(false)
     })
-
-    getRedirectResultOnce()
-      .then(() => setRedirectError(null))
-      .catch((error) => setRedirectError(error))
-
     return unsubscribe
   }, [])
 
@@ -104,11 +75,19 @@ export function AuthProvider({ children }) {
     await sendEmailVerification(credential.user)
   }
 
-  const consumeRedirectFrom = useCallback(() => {
-    const path = sessionStorage.getItem(REDIRECT_FROM_KEY)
-    sessionStorage.removeItem(REDIRECT_FROM_KEY)
-    return getSafeRedirectPath(path)
-  }, [])
+  const resendVerificationEmail = async () => {
+    if (!auth.currentUser) return
+    await sendEmailVerification(auth.currentUser)
+  }
+
+  /** 重新向 Firebase 取得使用者資料（例如確認信箱是否已驗證） */
+  const reloadUser = async () => {
+    if (!auth.currentUser) return
+    await auth.currentUser.reload()
+    setUserVersion((version) => version + 1)
+  }
+
+  const sendPasswordReset = (email) => sendPasswordResetEmail(auth, email)
 
   const signOut = () => firebaseSignOut(auth)
 
@@ -117,11 +96,12 @@ export function AuthProvider({ children }) {
       value={{
         user,
         loading,
-        redirectError,
         signInWithGoogle,
         signInWithEmail,
         signUpWithEmail,
-        consumeRedirectFrom,
+        resendVerificationEmail,
+        reloadUser,
+        sendPasswordReset,
         signOut,
       }}
     >
@@ -129,12 +109,4 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   )
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider')
-  }
-  return context
 }
