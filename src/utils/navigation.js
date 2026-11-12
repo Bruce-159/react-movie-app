@@ -18,6 +18,7 @@ const RETURN_LABELS = [
   { prefix: '/discover', label: '返回找電影' },
   { prefix: '/search', label: '返回搜尋結果' },
   { prefix: '/favorites', label: '返回我的電影' },
+  { prefix: '/recommend', label: '返回 AI 推薦' },
   { prefix: '/person/', label: '返回人物頁' },
 ]
 

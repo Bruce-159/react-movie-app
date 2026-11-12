@@ -13,6 +13,7 @@ const Favorites = lazy(() => import('./pages/Favorites.jsx'))
 const Login = lazy(() => import('./pages/Login.jsx'))
 const MovieDetail = lazy(() => import('./pages/MovieDetail.jsx'))
 const Person = lazy(() => import('./pages/person.jsx'))
+const Recommend = lazy(() => import('./pages/Recommend.jsx'))
 const SearchResults = lazy(() => import('./pages/SearchResults.jsx'))
 const NotFound = lazy(() => import('./pages/NotFound.jsx'))
 
@@ -32,6 +33,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/movie/:movieId" element={<MovieDetail />} />
             <Route path="/person/:personId" element={<Person />} />
+            <Route path="/recommend" element={<Recommend />} />
             <Route path="/search" element={<SearchResults />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

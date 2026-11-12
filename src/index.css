@@ -53,3 +53,26 @@ body {
     color: var(--text-h);
   }
 }
+
+/* AI 推薦：推薦卡片淡入、理由打字中的游標（用法：animate-ai-card-in、animate-ai-caret） */
+@theme {
+  --animate-ai-card-in: ai-card-in 0.35s ease-out both;
+  --animate-ai-caret: ai-caret 1s steps(1) infinite;
+
+  @keyframes ai-card-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes ai-caret {
+    50% {
+      opacity: 0;
+    }
+  }
+}

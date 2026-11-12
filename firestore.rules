@@ -8,6 +8,8 @@ rules_version = '2';
 //   users/{uid}/favorites/{movieId}
 //   users/{uid}/likes/{movieId}
 //   每筆欄位：movieId、title、poster_path、vote_average、vote_count、addedAt
+//   aiUsage/{uid}：AI 推薦每日次數，只由後端以服務帳戶（firebase-admin，不受規則限制）讀寫；
+//                  下面沒有任何規則開放它，所以前端無法讀取或竄改，請保持這樣。
 service cloud.firestore {
   match /databases/{database}/documents {
 

@@ -12,8 +12,9 @@ import { getDisplayRating, tmdbImage } from '../lib/tmdb.js'
  * @param {object} props.movie
  * @param {string} [props.returnTo] - 詳情頁「返回」要回到的路徑
  * @param {boolean} [props.showRating=true]
+ * @param {boolean} [props.showTitle=true] - 旁邊已有標題時（例如 AI 推薦列表）可隱藏
  */
-export default function MovieCard({ movie, returnTo, showRating = true }) {
+export default function MovieCard({ movie, returnTo, showRating = true, showTitle = true }) {
   const navigate = useNavigate()
 
   const posterUrl = tmdbImage(movie.poster_path, 'w342')
@@ -51,11 +52,13 @@ export default function MovieCard({ movie, returnTo, showRating = true }) {
             </span>
           )}
         </div>
-        <div className="p-3">
-          <h3 className="line-clamp-2 text-sm font-medium leading-snug text-zinc-100 transition group-hover:text-amber-50">
-            {movie.title}
-          </h3>
-        </div>
+        {showTitle && (
+          <div className="p-3">
+            <h3 className="line-clamp-2 text-sm font-medium leading-snug text-zinc-100 transition group-hover:text-amber-50">
+              {movie.title}
+            </h3>
+          </div>
+        )}
       </button>
       <div className="absolute left-2 top-2 z-10 flex flex-col gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
         <MovieListButton movie={movie} listType="favorites" variant="card" />

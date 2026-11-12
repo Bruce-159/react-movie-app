@@ -7,6 +7,7 @@ const NAV_LINKS = [
   { to: '/discover', label: '找電影', end: true },
   { to: '/discover/taiwan', label: '找國片' },
   { to: '/favorites', label: '我的電影' },
+  { to: '/recommend', label: 'AI 推薦' },
 ]
 
 const desktopLinkClass = ({ isActive }) =>
