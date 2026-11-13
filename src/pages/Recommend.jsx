@@ -6,8 +6,10 @@ import { useAuth } from '../contexts/useAuth.js'
 import { useAiRecommendations } from '../hooks/useAiRecommendations.js'
 import { useMovieList } from '../hooks/useMovieList'
 import {
+  AI_DAILY_LIMIT,
   AI_DEFAULT_ERA,
   AI_ERAS,
+  AI_GUEST_DAILY_LIMIT,
   AI_GENRES,
   AI_LANGUAGES,
   AI_MAX_GENRES,
@@ -141,7 +143,7 @@ function PageHeader() {
   )
 }
 
-function ListsSwitch({ checked, disabled, onChange, likedCount, watchlistCount }) {
+function ListsSwitch({ checked, disabled, isGuest, onChange, likedCount, watchlistCount }) {
   return (
     <div className="flex items-start justify-between gap-4">
       <div>
@@ -149,7 +151,14 @@ function ListsSwitch({ checked, disabled, onChange, likedCount, watchlistCount }
           參考我的電影清單
         </p>
         <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-          {disabled ? (
+          {isGuest ? (
+            <>
+              <Link to="/login" state={{ from: '/recommend' }} className="text-amber-300 hover:underline">
+                登入
+              </Link>
+              後可以讓 AI 參考你收藏與喜愛的電影。
+            </>
+          ) : disabled ? (
             <>
               你的清單目前是空的，可以先去{' '}
               <Link to="/discover" className="text-amber-300 hover:underline">
@@ -426,19 +435,43 @@ function UsageNote({ usage }) {
   if (usage.remaining === 0) {
     return (
       <span className="text-xs text-amber-300" role="status">
-        今天的 {usage.limit} 次 AI 推薦已經用完了，台灣時間午夜會重置。
+        {usage.guest
+          ? usage.poolExhausted
+            ? `今天的訪客試用名額已經用完了，登入後每天可以用 ${AI_DAILY_LIMIT} 次。`
+            : `訪客今天的 ${usage.limit} 次試用已經用完了，登入後每天可以用 ${AI_DAILY_LIMIT} 次。`
+          : `今天的 ${usage.limit} 次 AI 推薦已經用完了，台灣時間午夜會重置。`}
       </span>
     )
   }
   return (
     <span className="text-xs text-zinc-500">
-      今天還可以用 <span className="font-medium text-zinc-300">{usage.remaining}</span>／{usage.limit} 次
+      {usage.guest ? '訪客今天還可以試用 ' : '今天還可以用 '}
+      <span className="font-medium text-zinc-300">{usage.remaining}</span>／{usage.limit} 次
     </span>
   )
 }
 
+/** 訪客模式提示：說明試用額度，並引導登入 */
+function GuestBanner() {
+  return (
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-400/30 bg-violet-500/10 px-5 py-3">
+      <p className="m-0 text-sm text-violet-100">
+        <span className="mr-2 font-semibold">訪客模式</span>
+        每天可免費試用 {AI_GUEST_DAILY_LIMIT} 次。登入後每天 {AI_DAILY_LIMIT} 次，還能讓 AI 參考你的收藏。
+      </p>
+      <Link
+        to="/login"
+        state={{ from: '/recommend' }}
+        className="shrink-0 rounded-full px-4 py-1.5 text-sm font-medium text-violet-100 ring-1 ring-violet-300/40 transition hover:bg-violet-500/20"
+      >
+        登入
+      </Link>
+    </div>
+  )
+}
+
 /** busy：正在推薦中；locked：今天的次數已用完 */
-function AskForm({ liked, watchlist, busy, locked, usage, onAsk }) {
+function AskForm({ liked, watchlist, isGuest, busy, locked, usage, onAsk }) {
   const hasLists = liked.length + watchlist.length > 0
   const [text, setText] = useState('')
   const [useLists, setUseLists] = useState(hasLists)
@@ -510,6 +543,7 @@ function AskForm({ liked, watchlist, busy, locked, usage, onAsk }) {
       </div>
 
       <ListsSwitch
+        isGuest={isGuest}
         checked={effectiveUseLists}
         disabled={!hasLists}
         onChange={setUseLists}
@@ -667,7 +701,8 @@ function UnderstandingTags({ plan, busy, onRemove }) {
   )
 }
 
-function RecommendPanel({ user, liked, watchlist }) {
+/** user：正式登入的帳號或訪客（匿名帳號）；isGuest 時沒有清單、只能試用有限次數 */
+function RecommendPanel({ user, isGuest, liked, watchlist }) {
   const { view, status, error, progress, usage, ask, refine, updatePlan, moreLike, dislike, loadMore } =
     useAiRecommendations(user, { liked, watchlist })
   const [noMore, setNoMore] = useState(false)
@@ -695,7 +730,9 @@ function RecommendPanel({ user, liked, watchlist }) {
 
   return (
     <>
+      {isGuest && <GuestBanner />}
       <AskForm
+        isGuest={isGuest}
         liked={liked}
         watchlist={watchlist}
         busy={busy}
@@ -784,11 +821,53 @@ function RecommendPanel({ user, liked, watchlist }) {
   )
 }
 
+/** 未登入時：免登入試用（建立匿名帳號）或前往登入 */
+function SignInChoices({ onTryAsGuest }) {
+  const [starting, setStarting] = useState(false)
+  const [error, setError] = useState(null)
+
+  const tryAsGuest = async () => {
+    setStarting(true)
+    setError(null)
+    try {
+      await onTryAsGuest()
+    } catch (e) {
+      setError(
+        e?.code === 'auth/operation-not-allowed'
+          ? '訪客試用目前還沒開放，請先登入。'
+          : '暫時無法開始試用，請稍後再試或直接登入。',
+      )
+      setStarting(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-zinc-900/40 px-6 py-8">
+      <p className="mb-1 text-base font-medium text-zinc-100">不用註冊，馬上試試 AI 推薦</p>
+      <p className="mb-5 text-sm text-zinc-400">
+        訪客每天可免費試用 {AI_GUEST_DAILY_LIMIT} 次；登入後每天 {AI_DAILY_LIMIT} 次，還能讓 AI 參考你的收藏。
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="button" onClick={tryAsGuest} disabled={starting} className={primaryBtnClass}>
+          <SparkleIcon />
+          {starting ? '準備中…' : '免登入試用'}
+        </button>
+        <Link to="/login" state={{ from: '/recommend' }} className={pillLinkClass}>
+          登入
+        </Link>
+      </div>
+      {error && <ErrorState message={error} className="mt-4" />}
+    </div>
+  )
+}
+
 export default function Recommend() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, guest, loading: authLoading, signInAsGuest } = useAuth()
   const { items: likes, loading: likesLoading } = useMovieList('likes')
   const { items: favorites, loading: favoritesLoading } = useMovieList('favorites')
   const listsLoading = Boolean(user) && (likesLoading || favoritesLoading)
+  // 正式帳號優先；沒登入但已開始試用時，用訪客（匿名帳號）的身分呼叫 AI
+  const aiUser = user ?? guest
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-zinc-950 text-left text-zinc-100">
@@ -797,19 +876,18 @@ export default function Recommend() {
       <div className="relative z-10 px-5 pb-16 pt-8 sm:px-8 md:px-10">
         <PageHeader />
 
-        {!authLoading && !user && (
-          <div className="rounded-xl border border-white/10 bg-zinc-900/40 px-6 py-10">
-            <p className="mb-4 text-zinc-300">登入後即可使用 AI 推薦。</p>
-            <Link to="/login" state={{ from: '/recommend' }} className={pillLinkClass}>
-              前往登入
-            </Link>
-          </div>
-        )}
+        {!authLoading && !aiUser && <SignInChoices onTryAsGuest={signInAsGuest} />}
 
         {(authLoading || listsLoading) && <LoadingState message="載入清單中…" className="py-24" />}
 
-        {user && !listsLoading && (
-          <RecommendPanel key={user.uid} user={user} liked={likes} watchlist={favorites} />
+        {aiUser && !listsLoading && (
+          <RecommendPanel
+            key={aiUser.uid}
+            user={aiUser}
+            isGuest={!user}
+            liked={user ? likes : []}
+            watchlist={user ? favorites : []}
+          />
         )}
       </div>
     </main>

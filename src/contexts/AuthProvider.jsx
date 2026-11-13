@@ -6,6 +6,7 @@ import {
   onAuthStateChanged,
   sendEmailVerification,
   sendPasswordResetEmail,
+  signInAnonymously,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut as firebaseSignOut,
@@ -36,14 +37,19 @@ function AuthRedirectHandler() {
 }
 
 export function AuthProvider({ children }) {
+  // user：正式登入的帳號。免登入試用的訪客（Firebase 匿名登入）放在 guest，
+  // 不放進 user，所以收藏、我的電影、導覽列等功能仍把訪客當成未登入，只有 AI 推薦會用到 guest。
   const [user, setUser] = useState(null)
+  const [guest, setGuest] = useState(null)
   const [loading, setLoading] = useState(true)
   // Firebase 的 user.reload() 會原地更新同一個物件，用版本號讓畫面重繪
   const [, setUserVersion] = useState(0)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser)
+      const isGuest = Boolean(currentUser?.isAnonymous)
+      setUser(isGuest ? null : currentUser)
+      setGuest(isGuest ? currentUser : null)
       setLoading(false)
     })
     return unsubscribe
@@ -89,13 +95,21 @@ export function AuthProvider({ children }) {
 
   const sendPasswordReset = (email) => sendPasswordResetEmail(auth, email)
 
+  /** 免登入試用 AI 推薦：建立 Firebase 匿名帳號（之後正式登入會直接換成該帳號） */
+  const signInAsGuest = async () => {
+    if (auth.currentUser?.isAnonymous) return
+    await signInAnonymously(auth)
+  }
+
   const signOut = () => firebaseSignOut(auth)
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        guest,
         loading,
+        signInAsGuest,
         signInWithGoogle,
         signInWithEmail,
         signUpWithEmail,

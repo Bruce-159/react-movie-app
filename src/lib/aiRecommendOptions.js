@@ -5,6 +5,10 @@ import { GENRES } from '../utils/discoverHelpers.js'
 export const AI_PICK_COUNT = 12
 /** 每個帳號每天可呼叫 AI 推薦的次數（台灣時間午夜重置）；AI_UNLIMITED_EMAILS 內的帳號不受限 */
 export const AI_DAILY_LIMIT = 20
+/** 免登入試用（Firebase 匿名登入）的訪客：每人每天幾次 */
+export const AI_GUEST_DAILY_LIMIT = 3
+/** 所有訪客加起來每天最多幾次；匿名帳號可以無限建立，靠這個把訪客的總花費封頂 */
+export const AI_GUEST_DAILY_POOL = 100
 /** 類別、主題各最多可選幾個（選太多會篩不出片） */
 export const AI_MAX_GENRES = 3
 export const AI_MAX_THEMES = 3

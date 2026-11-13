@@ -13,7 +13,7 @@ const FIREBASE_JWKS = createRemoteJWKSet(
  * 只需要 project ID，不需要 service account 金鑰。
  * @param {string | null} authorizationHeader - `Bearer <token>`
  * @param {string} projectId
- * @returns {Promise<{ uid: string, email: string | null, emailVerified: boolean }>}
+ * @returns {Promise<{ uid: string, email: string | null, emailVerified: boolean, isAnonymous: boolean }>}
  */
 export async function verifyFirebaseToken(authorizationHeader, projectId) {
   const match = /^Bearer\s+(.+)$/i.exec(authorizationHeader ?? '')
@@ -32,5 +32,7 @@ export async function verifyFirebaseToken(authorizationHeader, projectId) {
     uid: payload.sub,
     email: typeof payload.email === 'string' ? payload.email : null,
     emailVerified: payload.email_verified === true,
+    // 免登入試用的訪客（Firebase 匿名登入）
+    isAnonymous: payload.firebase?.sign_in_provider === 'anonymous',
   }
 }
